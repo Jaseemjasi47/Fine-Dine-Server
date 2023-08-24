@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from .models import Restaurant, Food, Table, ReservedTable, PreOrderFood, Reservation
-from .serializers import RestaurantSerializer, TableSerializer, UserSerializer, FoodSerializer, ReservationSerializer, UserReservationSerializer,BookingSerializer
+from .serializers import *
 from django.http import JsonResponse
 from rest_framework.decorators import api_view
 from django.contrib.auth import get_user_model
@@ -28,6 +28,29 @@ class RestaurantBookingAPIView(APIView):
             return Response(serializer.data, status=status.HTTP_200_OK)
         except Reservation.DoesNotExist:
             return Response({"detail": "Reservations not found for the given restaurant."}, status=status.HTTP_404_NOT_FOUND)
+
+# class RestaurantBookingAPIView(APIView):
+#     permission_classes = [IsAuthenticated]
+
+#     def get(self, request, restaurant_id, format=None):
+#         try:
+#             reservations = Reservation.objects.filter(restaurant_id=restaurant_id)
+
+#             # Handle sorting by date
+#             sort_by = request.query_params.get('sort', None)
+#             if sort_by == 'date':
+#                 reservations = reservations.order_by('date_field')  # Replace 'date_field' with your actual date field
+
+#             # Handle filtering by paid status
+#             paid = request.query_params.get('paid', None)
+#             if paid:
+#                 reservations = reservations.filter(paid=paid == 'true')  # Convert to boolean
+
+#             serializer = UserReservationSerializer(reservations, many=True)
+#             return Response(serializer.data, status=status.HTTP_200_OK)
+#         except Reservation.DoesNotExist:
+#             return Response({"detail": "Reservations not found for the given restaurant."}, status=status.HTTP_404_NOT_FOUND)
+
 
 import json
 
@@ -132,6 +155,39 @@ class CreateFoodView(APIView):
             return Response(FoodSerializer(food).data, status=status.HTTP_201_CREATED)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+class CreateTableView(APIView):
+    def post(self, request, *args, **kwargs):
+        serializer = TableSerializer(data=request.data)
+
+        if serializer.is_valid():
+            # Get the restaurant ID and table number from the request data
+            restaurant_id = request.data.get("restaurant")
+            table_number = request.data.get("table_number")
+
+            # Check if the table_number is unique within the same restaurant
+            if Table.objects.filter(restaurant_id=restaurant_id, table_number=table_number).exists():
+                error_message = f"Table number {table_number} is already used in this restaurant."
+                return Response({'error': error_message}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Perform any additional validation or manipulation here if needed
+
+            # Create a new Table instance with the restaurant ID
+            table = Table.objects.create(restaurant_id=restaurant_id, **serializer.validated_data)
+
+            return Response(TableSerializer(table).data, status=status.HTTP_201_CREATED)
+        error_message = "Failed To Add Table. Check The Data And Try Again!"
+        return Response({'error': error_message}, status=status.HTTP_400_BAD_REQUEST)
+    
+class DeleteRestaurantView(APIView):
+    def delete(self, request, id):
+        try:
+            restaurant = Restaurant.objects.get(pk=id)
+        except Restaurant.DoesNotExist:
+            return Response({'error': 'Restaurant not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        restaurant.delete()
+        return Response({"message": "Restaurant Deleted successfully"}, status=status.HTTP_200_OK)
 
 class DeleteFoodView(APIView):
     def delete(self, request, id):
@@ -142,6 +198,16 @@ class DeleteFoodView(APIView):
 
         food.delete()
         return Response({"message": "Food Deleted successfully"}, status=status.HTTP_200_OK)
+    
+class DeleteTableView(APIView):
+    def delete(self, request, id):
+        try:
+            table = Table.objects.get(pk=id)
+        except Table.DoesNotExist:
+            return Response({'error': 'Table not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        table.delete()
+        return Response({"message": "Table Deleted successfully"}, status=status.HTTP_200_OK)
 
 # -----------------------owner side end-------------------
 
@@ -149,22 +215,26 @@ class DeleteFoodView(APIView):
 class RestaurantCreateView(APIView):
     def post(self, request, format=None):
         # Check if the owner user exists based on the provided email
-        owner_email = request.data.get('email')
+        owner_email = request.data.get('owner')
+
         try:
             owner = User.objects.get(email=owner_email)
         except User.DoesNotExist:
             # Return 400 Bad Request with an error message
             return Response({'error': f'User with email {owner_email} not found.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Set the owner field to the authenticated user
-        request.data['owner'] = owner.pk
+        # Replace 'owner' value with owner.id
+        request.data['owner'] = owner.id
 
-        serializer = RestaurantSerializer(data=request.data)
+        serializer = RestaurantRegisterSerializer(data=request.data)
         if serializer.is_valid():
             # Save the restaurant
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            restaurant = Restaurant.objects.create(owner_id=owner.id, **serializer.validated_data)
+            serialized_data = RestaurantSerializer(restaurant).data  # Serialize the created restaurant
+            return Response(serialized_data, status=status.HTTP_201_CREATED)
+        else:
+            print(serializer.errors,'llllllllllllllllllllllllllllllllllllll')
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 
@@ -241,7 +311,7 @@ class TopRatedRestaurants(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request):
-        top_rated_restaurants = Restaurant.objects.filter(ratings__gt=0).order_by('-ratings')[:10]
+        top_rated_restaurants = Restaurant.objects.filter(status='Approved', ratings__gt=0).order_by('-ratings')[:10]
         serializer = RestaurantSerializer(top_rated_restaurants, many=True)
         return Response(serializer.data)
     
@@ -297,40 +367,16 @@ def get_available_restaurants(request):
 
 
 
-# class RestaurantTablesAPIView(APIView):
-#     def get(self, request, restaurant_id):
-#         try:
-#             # Fetch the provided date and time from the request query parameters
-#             date = request.query_params.get('date')
-#             time_str = request.query_params.get('time')
-#             time = datetime.strptime(time_str, '%H:%M').time()
 
-#             # Calculate 1 hour before and after the given time
-#             one_hour_before = (datetime.combine(datetime.min, time) - timedelta(minutes=59)).time()
-#             one_hour_after = (datetime.combine(datetime.min, time) + timedelta(minutes=59)).time()
 
-#             # Fetch the tables for the specified restaurant
-#             tables = Table.objects.filter(restaurant__id=restaurant_id)
-#             print(date, time, '*************************************')
+from rest_framework.generics import ListAPIView
 
-#             # Check table availability for the provided date and time range
-#             available_tables = []
-#             for table in tables:
-#                 is_available = not Reservation.objects.filter(
-#                     Q(table_no=table) &
-#                     Q(date=date) &
-#                     Q(time_slot__gte=one_hour_before, time_slot__lte=one_hour_after)
-#                 ).exists()
-#                 available_tables.append({
-#                     'table_id': table.id,
-#                     'table_number': table.table_number,
-#                     'seat_capacity': table.seat_capacity,
-#                     'is_available': is_available,
-#                 })
-#             print(available_tables, '++++++++++++++++++++++++++++  available_tables +++++++++++++++++')
-#             return Response(available_tables, status=status.HTTP_200_OK)
-#         except Exception as e:
-#             return Response({'error': 'Error fetching tables data'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+class RestaurantTables(ListAPIView):
+    serializer_class = TableSerializer
+
+    def get_queryset(self):
+        restaurant_id = self.kwargs.get('restaurant_id')
+        return Table.objects.filter(restaurant_id=restaurant_id)
 
 
 class RestaurantTablesAPIView(APIView):
@@ -555,7 +601,7 @@ class CreateCheckOutSession(APIView):
                 #     "product_id":Reservation.id
                 # },
                 mode='payment',
-                success_url=settings.SITE_URL + '/profile',
+                success_url=settings.SITE_URL + '/',
                 cancel_url=settings.SITE_URL + '/',
             )
 

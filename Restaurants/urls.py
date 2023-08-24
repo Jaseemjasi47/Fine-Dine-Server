@@ -7,6 +7,7 @@ urlpatterns = [
     path('available_restaurants/', views.get_available_restaurants, name='available_restaurants'),
     path('restaurant_detail/', views.RestaurantDetail.as_view(), name='restaurant_detail'),
     path('restaurant_foods/<int:restaurant_id>/', views.RestaurantFoods.as_view(), name='restaurant-foods'),
+    path('get_restaurants_tables/<int:restaurant_id>/', views.RestaurantTables.as_view(), name='get_restaurant_tables'),
     path('restaurants_tables/<int:restaurant_id>/', views.RestaurantTablesAPIView.as_view(), name='restaurant_tables'),
     path('restaurants/', views.RestaurantListView.as_view(), name='restaurant-list'),
     path('users/', views.UserListView.as_view(), name='user-list'),
@@ -24,5 +25,8 @@ urlpatterns = [
     path('update_reservation_status/', views.ReservationStatusUpdateView.as_view(), name='update_reservation_status'),
     path('create-food/', views.CreateFoodView.as_view(), name='create-food'),
     path('delete-food/<int:id>/', views.DeleteFoodView.as_view(), name='delete-food'),
+    path('create-table/', views.CreateTableView.as_view(), name='create-table'),
+    path('delete-table/<int:id>/', views.DeleteTableView.as_view(), name='delete-table'),
+    path('delete-restaurant/<int:id>/', views.DeleteRestaurantView.as_view(), name='delete-restaurant'),
 
 ]

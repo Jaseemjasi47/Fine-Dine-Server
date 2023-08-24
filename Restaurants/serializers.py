@@ -9,6 +9,11 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         fields = ['name', 'email']
 
+class RestaurantRegisterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Restaurant
+        fields = '__all__'
+
 class RestaurantSerializer(serializers.ModelSerializer):
     owner = UserSerializer()
     class Meta:
